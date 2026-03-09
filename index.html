@@ -34,9 +34,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; flex: 1; min-width: 150px; }
 .stat-card .stat-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
 .stat-card .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
-.stat-card .stat-value.green { color: var(--accent2); }
-.stat-card .stat-value.blue { color: var(--accent); }
-.stat-card .stat-value.warn { color: var(--warn); }
+.stat-card .stat-value.green, .stat-card .green { color: var(--accent2); }
+.stat-card .stat-value.blue, .stat-card .blue { color: var(--accent); }
+.stat-card .stat-value.warn, .stat-card .warn { color: var(--warn); }
+.stat-card .stat-value.danger, .stat-card .danger { color: var(--danger); }
 
 /* Controls */
 .controls { display: flex; gap: 12px; margin: 0 24px 16px; flex-wrap: wrap; align-items: center; }
@@ -247,10 +248,10 @@ const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
 const VEHICLES = {
   'Xterra': { gid: '347377224', icon: '🚙', info: {
     Make: 'Nissan', Model: 'Xterra 4.0 S', Year: '2010', VIN: '5N1AN0NW4AC500862', Engine: '4.0L V6'
-  }},
+  }, nextOil: { date: '2026-09-05', km: 204712 }, estValue: 27000 },
   'Fortuner': { gid: '84833382', icon: '🚗', info: {
     Make: 'Toyota', Model: 'Fortuner', Year: '2017', VIN: '', Engine: '2.7L 4-Cyl'
-  }}
+  }, nextOil: null, estValue: 30000 }
 };
 
 let currentVehicle = 'Xterra';
@@ -359,18 +360,30 @@ function renderHeader(info) {
 }
 
 function renderStats(logs) {
+  const v = VEHICLES[currentVehicle];
   const totalCost = logs.reduce((s, l) => s + (l.cost || 0), 0);
-  const completedCount = logs.filter(l => l.done).length;
-  const pendingCount = logs.filter(l => !l.done).length;
   const lastService = logs.filter(l => l.date).sort((a,b) => b.date.localeCompare(a.date))[0];
-  const maxKm = Math.max(...logs.filter(l => l.km).map(l => l.km));
+  const maxKm = Math.max(...logs.filter(l => l.km).map(l => l.km), 0);
+  const estValue = v.estValue || 0;
+  
+  // Next oil change
+  let oilHtml = '—';
+  let oilClass = '';
+  if (v.nextOil) {
+    const oilDate = new Date(v.nextOil.date);
+    const now = new Date();
+    const daysLeft = Math.ceil((oilDate - now) / (1000*60*60*24));
+    const kmLeft = v.nextOil.km - maxKm;
+    oilClass = (daysLeft < 30 || kmLeft < 1000) ? 'danger' : (daysLeft < 60 || kmLeft < 3000) ? 'warn' : 'green';
+    const dateStr = oilDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    oilHtml = `<div style="font-size:16px;font-weight:700" class="${oilClass}">${dateStr}</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px">or ${v.nextOil.km.toLocaleString()} km</div>`;
+  }
   
   document.getElementById('statsBar').innerHTML = `
-    <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value green">${totalCost.toLocaleString()} SAR</div></div>
-    <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value blue">${logs.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value green">${completedCount}</div></div>
-    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value warn">${pendingCount}</div></div>
-    <div class="stat-card"><div class="stat-label">Last KM</div><div class="stat-value">${maxKm > 0 ? maxKm.toLocaleString() : '—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Total MX Cost</div><div class="stat-value green">${totalCost.toLocaleString()} SAR</div></div>
+    <div class="stat-card"><div class="stat-label">Est. Car Value</div><div class="stat-value blue">${estValue.toLocaleString()} SAR</div></div>
+    <div class="stat-card"><div class="stat-label">Next Oil Change</div>${oilHtml}</div>
+    <div class="stat-card"><div class="stat-label">Current KM</div><div class="stat-value">${maxKm > 0 ? maxKm.toLocaleString() : '—'}</div></div>
     <div class="stat-card"><div class="stat-label">Last Service</div><div class="stat-value" style="font-size:16px">${lastService?.date || '—'}</div></div>
   `;
 }
