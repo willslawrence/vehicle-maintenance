@@ -179,16 +179,15 @@ tr:hover { background: var(--surface2); }
       <div style="font-size: 12px; margin-top: 4px;">JPG, PNG, PDF</div>
     </div>
   </div>
-  <div style="margin-top: 16px; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
-    <strong style="color: var(--accent);">💡 Receipt Storage Tip</strong>
-    <p style="color: var(--text-dim); font-size: 13px; margin-top: 6px;">
-      For now, receipts are stored locally in your browser. For permanent cloud storage, 
-      you can create a "Vehicle Receipts" folder in Google Drive and drag photos there, 
-      naming them with the date and service (e.g., "2026-03-09_oil-change.jpg").
-      <br><br>
-      A future update will add direct Google Drive integration for receipt photos linked 
-      to specific maintenance entries.
-    </p>
+  <div style="margin-top: 16px; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 200px;">
+      <strong style="color: var(--accent);">📁 Google Drive Storage</strong>
+      <p style="color: var(--text-dim); font-size: 13px; margin-top: 6px;">
+        Receipts are stored in Google Drive. Upload new receipt photos there, named with date and service 
+        (e.g., "2026-03-09_oil-change.jpg"). Local uploads above are browser-only (temporary).
+      </p>
+    </div>
+    <a href="https://drive.google.com/drive/folders/1oI0UsdCtg7IWZoLYcXqbvgBQT7JXQ65g" target="_blank" class="btn btn-primary" style="text-decoration: none; white-space: nowrap;">📂 Open Receipts Folder</a>
   </div>
 </div>
 
