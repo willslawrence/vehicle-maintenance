@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vehicle Maintenance Log</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #21262d; --border: #30363d;
+  --text: #e6edf3; --text-dim: #8b949e; --accent: #58a6ff; --accent2: #3fb950;
+  --warn: #d29922; --danger: #f85149; --radius: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* Nav */
+.nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+.nav h1 { font-size: 20px; font-weight: 600; }
+.nav h1 span { color: var(--accent); }
+.vehicle-tabs { display: flex; gap: 8px; margin-left: auto; }
+.vehicle-tab { padding: 8px 20px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 14px; transition: all 0.2s; }
+.vehicle-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.vehicle-tab:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+
+/* Vehicle Header */
+.vehicle-header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.vehicle-header .field { }
+.vehicle-header .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.vehicle-header .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+.vehicle-header .cost { color: var(--accent2); }
+
+/* Stats Bar */
+.stats-bar { display: flex; gap: 16px; margin: 0 24px 24px; flex-wrap: wrap; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; flex: 1; min-width: 150px; }
+.stat-card .stat-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
+.stat-card .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+.stat-card .stat-value.green { color: var(--accent2); }
+.stat-card .stat-value.blue { color: var(--accent); }
+.stat-card .stat-value.warn { color: var(--warn); }
+
+/* Controls */
+.controls { display: flex; gap: 12px; margin: 0 24px 16px; flex-wrap: wrap; align-items: center; }
+.search-box { flex: 1; min-width: 200px; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; outline: none; }
+.search-box:focus { border-color: var(--accent); }
+.btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4c9aed; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.filter-btn { padding: 6px 14px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 13px; }
+.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Table */
+.table-container { margin: 0 24px 24px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+th { background: var(--surface2); padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); white-space: nowrap; cursor: pointer; user-select: none; }
+th:hover { color: var(--text); }
+th .sort-arrow { margin-left: 4px; opacity: 0.3; }
+th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+td { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 14px; }
+tr:hover { background: var(--surface2); }
+.done-cell { text-align: center; }
+.done-check { color: var(--accent2); font-size: 18px; }
+.done-pending { color: var(--warn); font-size: 18px; }
+.cost-cell { text-align: right; font-weight: 500; white-space: nowrap; }
+.date-cell { white-space: nowrap; }
+.notes-cell { max-width: 300px; font-size: 13px; color: var(--text-dim); }
+.km-cell { text-align: right; white-space: nowrap; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; justify-content: center; align-items: center; padding: 24px; }
+.modal-overlay.active { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.modal-header h2 { font-size: 18px; }
+.modal-close { background: none; border: none; color: var(--text-dim); font-size: 24px; cursor: pointer; }
+.modal-body { padding: 24px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+.form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+.form-group textarea { resize: vertical; min-height: 60px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Receipt section */
+.receipt-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin: 0 24px 24px; padding: 24px; }
+.receipt-section h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.receipt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.receipt-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color 0.2s; }
+.receipt-card:hover { border-color: var(--accent); }
+.receipt-card .receipt-date { font-size: 12px; color: var(--text-dim); }
+.receipt-card .receipt-desc { font-size: 14px; margin-top: 4px; }
+.receipt-card .receipt-amount { font-size: 16px; font-weight: 600; color: var(--accent2); margin-top: 4px; }
+.receipt-card img { width: 100%; border-radius: 4px; margin-top: 8px; max-height: 120px; object-fit: cover; }
+.receipt-upload { border: 2px dashed var(--border); border-radius: 8px; padding: 32px; text-align: center; color: var(--text-dim); cursor: pointer; transition: border-color 0.2s; }
+.receipt-upload:hover { border-color: var(--accent); }
+.receipt-upload input { display: none; }
+
+/* Loading */
+.loading { text-align: center; padding: 40px; color: var(--text-dim); }
+.spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Mobile */
+@media (max-width: 768px) {
+  .nav { flex-wrap: wrap; padding: 12px 16px; }
+  .vehicle-tabs { margin-left: 0; width: 100%; }
+  .vehicle-tab { flex: 1; text-align: center; }
+  .vehicle-header { margin: 16px; padding: 16px; }
+  .stats-bar { margin: 0 16px 16px; }
+  .controls { margin: 0 16px 12px; }
+  .table-container { margin: 0 16px 16px; }
+  .receipt-section { margin: 0 16px 16px; }
+  .form-row { grid-template-columns: 1fr; }
+  td, th { padding: 8px 12px; }
+  .notes-cell { max-width: 150px; }
+}
+
+/* Print */
+@media print {
+  body { background: #fff; color: #000; }
+  .nav, .controls, .btn, .receipt-upload, .modal-overlay { display: none !important; }
+  table { border: 1px solid #ccc; }
+  td, th { border: 1px solid #ccc; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <h1>🔧 <span>Vehicle</span> Maintenance</h1>
+  <div class="vehicle-tabs" id="vehicleTabs"></div>
+</nav>
+
+<div id="vehicleHeader" class="vehicle-header"></div>
+<div id="statsBar" class="stats-bar"></div>
+
+<div class="controls">
+  <input type="text" class="search-box" id="searchBox" placeholder="Search maintenance records...">
+  <div style="display: flex; gap: 6px;">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="done">Done</button>
+    <button class="filter-btn" data-filter="pending">Pending</button>
+  </div>
+  <button class="btn btn-primary" onclick="openAddModal()">+ Add Entry</button>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead id="tableHead">
+      <tr>
+        <th data-sort="done" class="sorted">Status <span class="sort-arrow">↕</span></th>
+        <th data-sort="date">Date <span class="sort-arrow">↕</span></th>
+        <th data-sort="km">KM <span class="sort-arrow">↕</span></th>
+        <th data-sort="work">Work Performed <span class="sort-arrow">↕</span></th>
+        <th data-sort="performed_by">Performed By <span class="sort-arrow">↕</span></th>
+        <th data-sort="cost">Cost (SAR) <span class="sort-arrow">↕</span></th>
+        <th data-sort="notes">Notes <span class="sort-arrow">↕</span></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr><td colspan="7" class="loading"><div class="spinner"></div><br>Loading data...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="receipt-section">
+  <h3>📄 Receipts & Documents</h3>
+  <p style="color: var(--text-dim); margin-bottom: 16px; font-size: 14px;">
+    Store receipt photos linked to maintenance entries. Images are saved to Google Drive.
+  </p>
+  <div class="receipt-grid" id="receiptGrid">
+    <div class="receipt-upload" id="receiptUpload">
+      <input type="file" id="receiptFile" accept="image/*" multiple>
+      <div>📷 Click or drag to upload receipt</div>
+      <div style="font-size: 12px; margin-top: 4px;">JPG, PNG, PDF</div>
+    </div>
+  </div>
+  <div style="margin-top: 16px; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
+    <strong style="color: var(--accent);">💡 Receipt Storage Tip</strong>
+    <p style="color: var(--text-dim); font-size: 13px; margin-top: 6px;">
+      For now, receipts are stored locally in your browser. For permanent cloud storage, 
+      you can create a "Vehicle Receipts" folder in Google Drive and drag photos there, 
+      naming them with the date and service (e.g., "2026-03-09_oil-change.jpg").
+      <br><br>
+      A future update will add direct Google Drive integration for receipt photos linked 
+      to specific maintenance entries.
+    </p>
+  </div>
+</div>
+
+<!-- Add Entry Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Maintenance Entry</h2>
+      <button class="modal-close" onclick="closeAddModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="entryDate" value="">
+        </div>
+        <div class="form-group">
+          <label>Kilometers</label>
+          <input type="number" id="entryKm" placeholder="e.g., 195000">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Work Performed</label>
+        <textarea id="entryWork" placeholder="Describe the maintenance work..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Performed By</label>
+          <input type="text" id="entryBy" placeholder="e.g., Self, Petromin, Ben">
+        </div>
+        <div class="form-group">
+          <label>Cost (SAR)</label>
+          <input type="number" id="entryCost" placeholder="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="entryNotes" placeholder="Additional notes, warranty info, links..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="entryDone">
+          <option value="FALSE">Pending</option>
+          <option value="TRUE">Done</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEntry()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
+const VEHICLES = {
+  'Xterra': { gid: '347377224', icon: '🚙' },
+  'Fortuner': { gid: '84833382', icon: '🚗' }
+};
+
+let currentVehicle = 'Xterra';
+let allData = {};
+let currentFilter = 'all';
+let searchTerm = '';
+let sortCol = 'date';
+let sortDir = -1; // -1 = newest first
+
+// Init tabs
+const tabsEl = document.getElementById('vehicleTabs');
+Object.keys(VEHICLES).forEach(name => {
+  const btn = document.createElement('button');
+  btn.className = 'vehicle-tab' + (name === currentVehicle ? ' active' : '');
+  btn.textContent = VEHICLES[name].icon + ' ' + name;
+  btn.onclick = () => switchVehicle(name);
+  tabsEl.appendChild(btn);
+});
+
+function switchVehicle(name) {
+  currentVehicle = name;
+  document.querySelectorAll('.vehicle-tab').forEach(t => t.classList.remove('active'));
+  [...tabsEl.children].find(t => t.textContent.includes(name)).classList.add('active');
+  render();
+}
+
+async function fetchVehicleData(name) {
+  const gid = VEHICLES[name].gid;
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  const resp = await fetch(url);
+  const text = await resp.text();
+  return parseCSV(text);
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  const parsed = lines.map(line => {
+    const cells = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) { cells.push(current); current = ''; }
+      else current += ch;
+    }
+    cells.push(current);
+    return cells;
+  });
+  
+  // Extract vehicle info (rows 0-4)
+  const info = {};
+  for (let i = 0; i < Math.min(5, parsed.length); i++) {
+    const row = parsed[i];
+    if (row[0] && row[1]) {
+      const key = row[0].replace(/\s+/g, ' ').trim();
+      // Handle merged cells - first col might have "Make Model" combined
+      if (key.startsWith('Make')) {
+        const parts = key.split(' ');
+        info.Make = parts[0] === 'Make' ? (parts.length > 1 ? row[1] || parts.slice(1).join(' ') : row[1]) : row[1];
+      }
+      else info[key] = row[1];
+    }
+  }
+  
+  // Find header row (the one with "Work Performed")
+  let headerIdx = -1;
+  for (let i = 0; i < parsed.length; i++) {
+    if (parsed[i].some(c => c.includes('Work Performed'))) { headerIdx = i; break; }
+  }
+  
+  // Extract log entries
+  const logs = [];
+  if (headerIdx >= 0) {
+    for (let i = headerIdx + 1; i < parsed.length; i++) {
+      const row = parsed[i];
+      if (!row[3] || !row[3].trim()) continue; // skip empty work rows
+      logs.push({
+        done: row[0]?.toUpperCase() === 'TRUE',
+        date: row[1] || '',
+        km: row[2] ? parseInt(row[2].replace(/,/g, '')) : null,
+        work: row[3] || '',
+        performed_by: row[4] || '',
+        cost: row[5] ? parseFloat(row[5].replace(/,/g, '')) : null,
+        notes: row[6] || ''
+      });
+    }
+  }
+  
+  return { info, logs };
+}
+
+function render() {
+  const data = allData[currentVehicle];
+  if (!data) return;
+  
+  renderHeader(data.info);
+  renderStats(data.logs);
+  renderTable(data.logs);
+  renderReceipts();
+}
+
+function renderHeader(info) {
+  const el = document.getElementById('vehicleHeader');
+  // Parse from available info - handle merged first row
+  const make = info.Make || info['Make Model']?.split(' ')[0] || '—';
+  const model = info.Model || info['Make Model']?.split(' ').slice(1).join(' ') || '—';
+  
+  el.innerHTML = `
+    <div class="field"><div class="label">Make</div><div class="value">${make}</div></div>
+    <div class="field"><div class="label">Model</div><div class="value">${model}</div></div>
+    <div class="field"><div class="label">Year</div><div class="value">${info.Year || '—'}</div></div>
+    <div class="field"><div class="label">VIN</div><div class="value" style="font-size:14px;font-family:monospace">${info.VIN || '—'}</div></div>
+    <div class="field"><div class="label">Engine</div><div class="value">${info.Engine || '—'}</div></div>
+  `;
+}
+
+function renderStats(logs) {
+  const totalCost = logs.reduce((s, l) => s + (l.cost || 0), 0);
+  const completedCount = logs.filter(l => l.done).length;
+  const pendingCount = logs.filter(l => !l.done).length;
+  const lastService = logs.filter(l => l.date).sort((a,b) => b.date.localeCompare(a.date))[0];
+  const maxKm = Math.max(...logs.filter(l => l.km).map(l => l.km));
+  
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value green">${totalCost.toLocaleString()} SAR</div></div>
+    <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value blue">${logs.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value green">${completedCount}</div></div>
+    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value warn">${pendingCount}</div></div>
+    <div class="stat-card"><div class="stat-label">Last KM</div><div class="stat-value">${maxKm > 0 ? maxKm.toLocaleString() : '—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Last Service</div><div class="stat-value" style="font-size:16px">${lastService?.date || '—'}</div></div>
+  `;
+}
+
+function renderTable(logs) {
+  let filtered = [...logs];
+  
+  // Filter
+  if (currentFilter === 'done') filtered = filtered.filter(l => l.done);
+  if (currentFilter === 'pending') filtered = filtered.filter(l => !l.done);
+  
+  // Search
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    filtered = filtered.filter(l => 
+      l.work.toLowerCase().includes(q) || 
+      l.performed_by.toLowerCase().includes(q) ||
+      l.notes.toLowerCase().includes(q) ||
+      l.date.includes(q)
+    );
+  }
+  
+  // Sort
+  filtered.sort((a, b) => {
+    let va, vb;
+    switch(sortCol) {
+      case 'done': va = a.done ? 1 : 0; vb = b.done ? 1 : 0; break;
+      case 'date': va = a.date || '0000'; vb = b.date || '0000'; break;
+      case 'km': va = a.km || 0; vb = b.km || 0; break;
+      case 'cost': va = a.cost || 0; vb = b.cost || 0; break;
+      case 'work': va = a.work.toLowerCase(); vb = b.work.toLowerCase(); break;
+      case 'performed_by': va = a.performed_by.toLowerCase(); vb = b.performed_by.toLowerCase(); break;
+      default: va = a.date || '0000'; vb = b.date || '0000';
+    }
+    if (va < vb) return -1 * sortDir;
+    if (va > vb) return 1 * sortDir;
+    return 0;
+  });
+  
+  const tbody = document.getElementById('tableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-dim)">No records found</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = filtered.map(l => `
+    <tr>
+      <td class="done-cell">${l.done ? '<span class="done-check">✓</span>' : '<span class="done-pending">○</span>'}</td>
+      <td class="date-cell">${l.date || '—'}</td>
+      <td class="km-cell">${l.km ? l.km.toLocaleString() : '—'}</td>
+      <td>${escHtml(l.work)}</td>
+      <td>${escHtml(l.performed_by) || '—'}</td>
+      <td class="cost-cell">${l.cost != null ? l.cost.toLocaleString() + ' SAR' : '—'}</td>
+      <td class="notes-cell" title="${escHtml(l.notes)}">${escHtml(truncate(l.notes, 80))}</td>
+    </tr>
+  `).join('');
+}
+
+function renderReceipts() {
+  const key = `receipts_${currentVehicle}`;
+  const receipts = JSON.parse(localStorage.getItem(key) || '[]');
+  const grid = document.getElementById('receiptGrid');
+  const upload = document.getElementById('receiptUpload');
+  
+  // Clear existing cards (keep upload)
+  grid.querySelectorAll('.receipt-card').forEach(c => c.remove());
+  
+  receipts.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = 'receipt-card';
+    card.innerHTML = `
+      <div class="receipt-date">${r.date}</div>
+      <div class="receipt-desc">${escHtml(r.desc)}</div>
+      <div class="receipt-amount">${r.amount ? r.amount + ' SAR' : ''}</div>
+      ${r.image ? `<img src="${r.image}" alt="Receipt">` : ''}
+      <button class="btn btn-danger" style="margin-top:8px;padding:4px 8px;font-size:12px" onclick="deleteReceipt(${i})">Remove</button>
+    `;
+    grid.insertBefore(card, upload);
+  });
+}
+
+// Event handlers
+document.getElementById('searchBox').addEventListener('input', e => {
+  searchTerm = e.target.value;
+  renderTable(allData[currentVehicle]?.logs || []);
+});
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    renderTable(allData[currentVehicle]?.logs || []);
+  });
+});
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (sortCol === col) sortDir *= -1;
+    else { sortCol = col; sortDir = -1; }
+    document.querySelectorAll('th').forEach(t => t.classList.remove('sorted'));
+    th.classList.add('sorted');
+    renderTable(allData[currentVehicle]?.logs || []);
+  });
+});
+
+// Receipt upload
+document.getElementById('receiptUpload').addEventListener('click', () => {
+  document.getElementById('receiptFile').click();
+});
+
+document.getElementById('receiptFile').addEventListener('change', e => {
+  const files = e.target.files;
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const key = `receipts_${currentVehicle}`;
+      const receipts = JSON.parse(localStorage.getItem(key) || '[]');
+      receipts.push({
+        date: new Date().toISOString().split('T')[0],
+        desc: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        amount: '',
+        image: reader.result
+      });
+      localStorage.setItem(key, JSON.stringify(receipts));
+      renderReceipts();
+    };
+    reader.readAsDataURL(file);
+  });
+});
+
+function deleteReceipt(idx) {
+  const key = `receipts_${currentVehicle}`;
+  const receipts = JSON.parse(localStorage.getItem(key) || '[]');
+  receipts.splice(idx, 1);
+  localStorage.setItem(key, JSON.stringify(receipts));
+  renderReceipts();
+}
+
+// Add entry modal
+function openAddModal() {
+  document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('addModal').classList.add('active');
+}
+
+function closeAddModal() {
+  document.getElementById('addModal').classList.remove('active');
+}
+
+function saveEntry() {
+  const entry = {
+    done: document.getElementById('entryDone').value === 'TRUE',
+    date: document.getElementById('entryDate').value,
+    km: parseInt(document.getElementById('entryKm').value) || null,
+    work: document.getElementById('entryWork').value,
+    performed_by: document.getElementById('entryBy').value,
+    cost: parseFloat(document.getElementById('entryCost').value) || null,
+    notes: document.getElementById('entryNotes').value
+  };
+  
+  if (!entry.work) { alert('Please enter work performed'); return; }
+  
+  // Save to local storage (pending sync to sheet)
+  const key = `pending_${currentVehicle}`;
+  const pending = JSON.parse(localStorage.getItem(key) || '[]');
+  pending.push(entry);
+  localStorage.setItem(key, JSON.stringify(pending));
+  
+  // Add to current data
+  allData[currentVehicle].logs.push(entry);
+  render();
+  closeAddModal();
+  
+  // Clear form
+  ['entryWork', 'entryBy', 'entryCost', 'entryNotes', 'entryKm'].forEach(id => document.getElementById(id).value = '');
+}
+
+// Utility
+function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function truncate(s, n) { return s && s.length > n ? s.substring(0, n) + '...' : (s || ''); }
+
+// Boot
+async function init() {
+  for (const name of Object.keys(VEHICLES)) {
+    try {
+      allData[name] = await fetchVehicleData(name);
+      // Merge local pending entries
+      const pending = JSON.parse(localStorage.getItem(`pending_${name}`) || '[]');
+      allData[name].logs.push(...pending);
+    } catch (e) {
+      console.error(`Failed to load ${name}:`, e);
+      allData[name] = { info: {}, logs: [] };
+    }
+  }
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
