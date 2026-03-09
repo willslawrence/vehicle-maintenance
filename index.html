@@ -384,7 +384,7 @@ function renderStats(logs) {
     <div class="stat-card"><div class="stat-label">Est. Car Value</div><div class="stat-value blue">${estValue.toLocaleString()} SAR</div></div>
     <div class="stat-card"><div class="stat-label">Next Oil Change</div>${oilHtml}</div>
     <div class="stat-card"><div class="stat-label">Current KM</div><div class="stat-value">${maxKm > 0 ? maxKm.toLocaleString() : '—'}</div></div>
-    <div class="stat-card"><div class="stat-label">Last Service</div><div class="stat-value" style="font-size:16px">${lastService?.date || '—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Last Service</div><div class="stat-value" style="font-size:16px">${fmtDate(lastService?.date)}</div></div>
   `;
 }
 
@@ -432,7 +432,7 @@ function renderTable(logs) {
   tbody.innerHTML = filtered.map(l => `
     <tr>
       <td class="done-cell">${l.done ? '<span class="done-check">✓</span>' : '<span class="done-pending">○</span>'}</td>
-      <td class="date-cell">${l.date || '—'}</td>
+      <td class="date-cell">${fmtDate(l.date)}</td>
       <td class="km-cell">${l.km ? l.km.toLocaleString() : '—'}</td>
       <td>${escHtml(l.work)}</td>
       <td>${escHtml(l.performed_by) || '—'}</td>
@@ -565,6 +565,21 @@ function saveEntry() {
 // Utility
 function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 function truncate(s, n) { return s && s.length > n ? s.substring(0, n) + '...' : (s || ''); }
+function fmtDate(raw) {
+  if (!raw) return '—';
+  // Parse various formats: YYYY-MM-DD, M/D/YY, M/D/YYYY, MM/DD/YY
+  let d;
+  if (raw.includes('-')) {
+    d = new Date(raw + 'T00:00:00');
+  } else if (raw.includes('/')) {
+    const parts = raw.split('/');
+    let y = parseInt(parts[2]);
+    if (y < 100) y += 2000;
+    d = new Date(y, parseInt(parts[0]) - 1, parseInt(parts[1]));
+  } else { return raw; }
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 // Boot
 async function init() {
