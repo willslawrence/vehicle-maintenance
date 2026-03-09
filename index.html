@@ -245,8 +245,12 @@ tr:hover { background: var(--surface2); }
 <script>
 const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
 const VEHICLES = {
-  'Xterra': { gid: '347377224', icon: '🚙' },
-  'Fortuner': { gid: '84833382', icon: '🚗' }
+  'Xterra': { gid: '347377224', icon: '🚙', info: {
+    Make: 'Nissan', Model: 'Xterra 4.0 S', Year: '2010', VIN: '5N1AN0NW4AC500862', Engine: '4.0L V6'
+  }},
+  'Fortuner': { gid: '84833382', icon: '🚗', info: {
+    Make: 'Toyota', Model: 'Fortuner', Year: '2017', VIN: '', Engine: '2.7L 4-Cyl'
+  }}
 };
 
 let currentVehicle = 'Xterra';
@@ -299,26 +303,16 @@ function parseCSV(text) {
     return cells;
   });
   
-  // Extract vehicle info (rows 0-4)
-  const info = {};
-  for (let i = 0; i < Math.min(5, parsed.length); i++) {
-    const row = parsed[i];
-    if (row[0] && row[1]) {
-      const key = row[0].replace(/\s+/g, ' ').trim();
-      // Handle merged cells - first col might have "Make Model" combined
-      if (key.startsWith('Make')) {
-        const parts = key.split(' ');
-        info.Make = parts[0] === 'Make' ? (parts.length > 1 ? row[1] || parts.slice(1).join(' ') : row[1]) : row[1];
-      }
-      else info[key] = row[1];
-    }
-  }
+  // Use hardcoded vehicle info from VEHICLES config
+  const info = VEHICLES[currentVehicle]?.info || {};
   
-  // Find header row (the one with "Work Performed")
+  // Find header row (the one with "Work Performed") or the sub-header row
   let headerIdx = -1;
   for (let i = 0; i < parsed.length; i++) {
     if (parsed[i].some(c => c.includes('Work Performed'))) { headerIdx = i; break; }
   }
+  // If no header found, assume row 1 (index 1) is the header
+  if (headerIdx === -1) headerIdx = 1;
   
   // Extract log entries
   const logs = [];
@@ -353,16 +347,14 @@ function render() {
 
 function renderHeader(info) {
   const el = document.getElementById('vehicleHeader');
-  // Parse from available info - handle merged first row
-  const make = info.Make || info['Make Model']?.split(' ')[0] || '—';
-  const model = info.Model || info['Make Model']?.split(' ').slice(1).join(' ') || '—';
+  const vInfo = VEHICLES[currentVehicle]?.info || {};
   
   el.innerHTML = `
-    <div class="field"><div class="label">Make</div><div class="value">${make}</div></div>
-    <div class="field"><div class="label">Model</div><div class="value">${model}</div></div>
-    <div class="field"><div class="label">Year</div><div class="value">${info.Year || '—'}</div></div>
-    <div class="field"><div class="label">VIN</div><div class="value" style="font-size:14px;font-family:monospace">${info.VIN || '—'}</div></div>
-    <div class="field"><div class="label">Engine</div><div class="value">${info.Engine || '—'}</div></div>
+    <div class="field"><div class="label">Make</div><div class="value">${vInfo.Make || '—'}</div></div>
+    <div class="field"><div class="label">Model</div><div class="value">${vInfo.Model || '—'}</div></div>
+    <div class="field"><div class="label">Year</div><div class="value">${vInfo.Year || '—'}</div></div>
+    <div class="field"><div class="label">VIN</div><div class="value" style="font-size:14px;font-family:monospace">${vInfo.VIN || '—'}</div></div>
+    <div class="field"><div class="label">Engine</div><div class="value">${vInfo.Engine || '—'}</div></div>
   `;
 }
 
