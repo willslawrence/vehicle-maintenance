@@ -284,7 +284,12 @@ function switchVehicle(name) {
   render();
 }
 
-// Generic CSV row parser (reused by vehicle info + maintenance logs)
+// TSV row parser
+function parseTSVRows(text) {
+  return text.split('\n').filter(l => l.trim()).map(line => line.split('\t'));
+}
+
+// Generic CSV row parser
 function parseCSVRows(text) {
   const lines = text.split('\n').filter(l => l.trim());
   return lines.map(line => {
@@ -307,14 +312,15 @@ function parseCSVRows(text) {
 async function fetchVehicleData(name) {
   const gid = TAB_GIDS[name];
   if (!gid) return { info: {}, logs: [], icon: '🚗', estValue: 0 };
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  // Use TSV export — CSV endpoint drops some cell values (merged cell bug)
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=tsv&gid=${gid}`;
   const resp = await fetch(url);
   const text = await resp.text();
-  return parseMaintenanceLogs(text);
+  return parseMaintenanceLogs(text, true);
 }
 
-function parseMaintenanceLogs(text) {
-  const parsed = parseCSVRows(text);
+function parseMaintenanceLogs(text, isTSV) {
+  const parsed = isTSV ? parseTSVRows(text) : parseCSVRows(text);
   
   // Row 1 = info headers (Vehicle, Make, Model, Year, VIN, Engine, Icon, EstValue)
   // Row 2 = info values
