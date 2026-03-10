@@ -752,14 +752,7 @@ async function init() {
   await receiptPromise;
   render();
   
-  // Show setup banner if Apps Script URL not configured
-  if (!APPS_SCRIPT_URL) {
-    const banner = document.createElement('div');
-    banner.style.cssText = 'margin:0 24px 16px;padding:16px;background:var(--surface);border:1px solid var(--warn);border-radius:8px;color:var(--warn);font-size:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
-    banner.innerHTML = `<span>⚠️ <strong>Receipt uploads not connected.</strong> Deploy the Apps Script and click a 📷 button to set the URL.</span>
-      <a href="https://github.com/willslawrence/vehicle-maintenance/blob/main/APPS_SCRIPT.js" target="_blank" class="btn btn-secondary" style="text-decoration:none;font-size:13px;">📄 Setup Guide</a>`;
-    document.querySelector('.controls').before(banner);
-  }
+
 }
 
 init();
