@@ -7,6 +7,7 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     if (data.action === 'upload') return handleUpload(data);
     if (data.action === 'delete') return handleDelete(data);
+    if (data.action === 'addEntry') return handleAddEntry(data);
     return jsonResponse({ error: 'Unknown action' });
   } catch (err) {
     return jsonResponse({ error: err.message });
@@ -66,6 +67,26 @@ function handleUpload(data) {
   }
 
   return jsonResponse({ success: true, fileId: fileId, fileUrl: fileUrl, thumbUrl: thumbUrl, matched: matched });
+}
+
+function handleAddEntry(data) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(data.vehicle);
+  if (!sheet) return jsonResponse({ error: 'Vehicle tab not found' });
+  
+  var e = data.entry;
+  sheet.appendRow([
+    e.done || 'FALSE',
+    e.date || '',
+    e.km || '',
+    e.work || '',
+    e.performed_by || '',
+    e.cost || '0',
+    e.notes || '',
+    '' // Receipt column
+  ]);
+  
+  return jsonResponse({ success: true });
 }
 
 function handleDelete(data) {

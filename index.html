@@ -113,17 +113,39 @@ tr:hover { background: var(--surface2); }
 
 /* Mobile */
 @media (max-width: 768px) {
-  .nav { flex-wrap: wrap; padding: 12px 16px; }
-  .vehicle-tabs { margin-left: 0; width: 100%; }
-  .vehicle-tab { flex: 1; text-align: center; }
-  .vehicle-header { margin: 16px; padding: 16px; }
-  .stats-bar { margin: 0 16px 16px; }
-  .controls { margin: 0 16px 12px; }
-  .table-container { margin: 0 16px 16px; }
-  .receipt-section { margin: 0 16px 16px; }
+  .nav { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  .nav h1 { font-size: 16px; }
+  .nav .btn-secondary { font-size: 11px !important; padding: 6px 10px !important; }
+  .vehicle-tabs { margin-left: 0; width: 100%; gap: 4px; }
+  .vehicle-tab { flex: 1; text-align: center; font-size: 12px; padding: 6px 12px; }
+  .vehicle-header { margin: 8px; padding: 12px; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .vehicle-header .value { font-size: 14px; }
+  .vehicle-header .label { font-size: 10px; }
+  .stats-bar { margin: 0 8px 8px; gap: 6px; }
+  .stat-card { padding: 10px 12px; min-width: 100px; }
+  .stat-card .stat-label { font-size: 10px; }
+  .stat-card .stat-value { font-size: 18px; }
+  .controls { margin: 0 8px 8px; gap: 6px; }
+  .search-box { min-width: 120px; padding: 8px 12px; font-size: 13px; }
+  .btn { padding: 8px 14px; font-size: 12px; }
+  .table-container { margin: 0 8px 8px; }
   .form-row { grid-template-columns: 1fr; }
-  td, th { padding: 8px 12px; }
-  .notes-cell { max-width: 150px; }
+  td, th { padding: 6px 8px; font-size: 12px; }
+  th { font-size: 10px; }
+  .notes-cell { max-width: 100px; font-size: 11px; }
+  .cost-cell { font-size: 12px; }
+  .km-cell { font-size: 12px; }
+  .receipt-thumb { width: 28px; height: 28px; }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .vehicle-header { grid-template-columns: 1fr 1fr; }
+  .stats-bar { flex-direction: column; }
+  .stat-card { min-width: unset; }
+  /* Hide less important columns on small screens */
+  th:nth-child(5), td:nth-child(5) { display: none; } /* Performed By */
+  th:nth-child(7), td:nth-child(7) { display: none; } /* Notes */
 }
 
 /* Print */
@@ -647,32 +669,37 @@ function closeAddModal() {
   document.getElementById('addModal').classList.remove('active');
 }
 
-function saveEntry() {
+async function saveEntry() {
   const entry = {
-    done: document.getElementById('entryDone').value === 'TRUE',
+    done: document.getElementById('entryDone').value,
     date: document.getElementById('entryDate').value,
-    km: parseInt(document.getElementById('entryKm').value) || null,
+    km: document.getElementById('entryKm').value || '',
     work: document.getElementById('entryWork').value,
     performed_by: document.getElementById('entryBy').value,
-    cost: parseFloat(document.getElementById('entryCost').value) || null,
+    cost: document.getElementById('entryCost').value || '0',
     notes: document.getElementById('entryNotes').value
   };
   
   if (!entry.work) { alert('Please enter work performed'); return; }
   
-  // Save to local storage (pending sync to sheet)
-  const key = `pending_${currentVehicle}`;
-  const pending = JSON.parse(localStorage.getItem(key) || '[]');
-  pending.push(entry);
-  localStorage.setItem(key, JSON.stringify(pending));
-  
-  // Add to current data
-  allData[currentVehicle].logs.push(entry);
-  render();
-  closeAddModal();
-  
-  // Clear form
-  ['entryWork', 'entryBy', 'entryCost', 'entryNotes', 'entryKm'].forEach(id => document.getElementById(id).value = '');
+  try {
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'addEntry', vehicle: currentVehicle, entry: entry })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      // Reload data from Sheet to get fresh row numbers
+      allData[currentVehicle] = await fetchVehicleData(currentVehicle);
+      render();
+      closeAddModal();
+      ['entryWork', 'entryBy', 'entryCost', 'entryNotes', 'entryKm'].forEach(id => document.getElementById(id).value = '');
+    } else {
+      alert('Save failed: ' + (result.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Save failed: ' + err.message);
+  }
 }
 
 // Utility
@@ -702,8 +729,6 @@ async function init() {
     try {
       allData[name] = await fetchVehicleData(name);
       VEHICLES[name] = { icon: allData[name].icon, estValue: allData[name].estValue };
-      const pending = JSON.parse(localStorage.getItem(`pending_${name}`) || '[]');
-      allData[name].logs.push(...pending);
     } catch (e) {
       console.error(`Failed to load ${name}:`, e);
       allData[name] = { info: {}, logs: [], icon: '🚗', estValue: 0 };
