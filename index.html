@@ -23,15 +23,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .vehicle-tab:hover:not(.active) { border-color: var(--accent); color: var(--text); }
 
 /* Vehicle Header */
-.vehicle-header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.vehicle-header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 16px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
 .vehicle-header .field { }
 .vehicle-header .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .vehicle-header .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
 .vehicle-header .cost { color: var(--accent2); }
 
 /* Stats Bar */
-.stats-bar { display: flex; gap: 16px; margin: 0 24px 24px; flex-wrap: wrap; }
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; flex: 1; min-width: 150px; }
+.stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0 24px 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 .stat-card .stat-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
 .stat-card .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
 .stat-card .stat-value.green, .stat-card .green { color: var(--accent2); }
@@ -121,8 +121,8 @@ tr:hover { background: var(--surface2); }
   .vehicle-header { margin: 8px; padding: 12px; grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .vehicle-header .value { font-size: 14px; }
   .vehicle-header .label { font-size: 10px; }
-  .stats-bar { margin: 0 8px 8px; gap: 6px; }
-  .stat-card { padding: 10px 12px; min-width: 100px; }
+  .stats-bar { margin: 0 8px 8px; gap: 6px; grid-template-columns: repeat(2, 1fr); }
+  .stat-card { padding: 10px 12px; }
   .stat-card .stat-label { font-size: 10px; }
   .stat-card .stat-value { font-size: 18px; }
   .controls { margin: 0 8px 8px; gap: 6px; }
@@ -141,8 +141,7 @@ tr:hover { background: var(--surface2); }
 /* Small phones */
 @media (max-width: 480px) {
   .vehicle-header { grid-template-columns: 1fr 1fr; }
-  .stats-bar { flex-direction: column; }
-  .stat-card { min-width: unset; }
+  .stats-bar { grid-template-columns: repeat(2, 1fr); }
   /* Hide less important columns on small screens */
   th:nth-child(5), td:nth-child(5) { display: none; } /* Performed By */
   th:nth-child(7), td:nth-child(7) { display: none; } /* Notes */
