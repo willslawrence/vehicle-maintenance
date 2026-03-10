@@ -88,7 +88,8 @@ tr:hover { background: var(--surface2); }
 .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Receipt cell */
-.receipt-cell { text-align: center; white-space: nowrap; }
+.receipt-cell { text-align: center; white-space: nowrap; position: relative; }
+.upload-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
 .receipt-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; cursor: pointer; border: 1px solid var(--border); transition: border-color 0.2s; vertical-align: middle; }
 .receipt-thumb:hover { border-color: var(--accent); }
 .receipt-badge { display: inline-flex; align-items: center; gap: 4px; }
@@ -246,6 +247,12 @@ const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
 const VEHICLE_INFO_GID = '1449143954'; // "Vehicle Info" tab — single source of truth
 // Tab GIDs for maintenance logs (keyed by vehicle name from Vehicle Info tab)
 const TAB_GIDS = { 'Xterra': '347377224', 'Fortuner': '84833382' };
+
+// Google Apps Script Web App URL — handles receipt upload/fetch via Google Drive
+// Deploy APPS_SCRIPT.js and paste the URL here:
+const APPS_SCRIPT_URL = localStorage.getItem('apps_script_url') || '';
+
+let allReceipts = []; // fetched from Apps Script at boot
 
 let VEHICLES = {}; // Populated from Sheet at boot
 let currentVehicle = '';
@@ -452,17 +459,18 @@ function renderTable(logs) {
   }
   
   tbody.innerHTML = filtered.map(l => {
-    const rKey = receiptKey(l);
-    const receipts = getReceipts(rKey);
+    const receipts = getReceiptsForLog(l);
+    const dAttr = escAttr(l.date || '');
+    const wAttr = escAttr((l.work || '').substring(0, 40).trim());
     let receiptHtml;
     if (receipts.length) {
       receiptHtml = `<td class="receipt-cell"><div class="receipt-badge">
-        <img class="receipt-thumb" src="${receipts[0]}" onclick="openLightbox('${escAttr(rKey)}', 0)" alt="Receipt">
+        <img class="receipt-thumb" src="https://lh3.googleusercontent.com/d/${receipts[0].fileId}=s200" onclick="openLightbox('${dAttr}', '${wAttr}', 0)" alt="Receipt">
         ${receipts.length > 1 ? `<span class="receipt-count">+${receipts.length - 1}</span>` : ''}
-        <button class="btn-icon" title="Add more" onclick="triggerUpload('${escAttr(rKey)}')" style="font-size:14px;margin-left:2px;">+</button>
+        <button class="btn-icon" title="Add more" onclick="triggerUpload('${dAttr}', '${wAttr}')" style="font-size:14px;margin-left:2px;">+</button>
       </div></td>`;
     } else {
-      receiptHtml = `<td class="receipt-cell"><button class="btn-icon" title="Add receipt" onclick="triggerUpload('${escAttr(rKey)}')">📷</button></td>`;
+      receiptHtml = `<td class="receipt-cell"><button class="btn-icon" title="Add receipt" onclick="triggerUpload('${dAttr}', '${wAttr}')">📷</button></td>`;
     }
     return `<tr>
       <td class="done-cell">${l.done ? '<span class="done-check">✓</span>' : '<span class="done-pending">○</span>'}</td>
@@ -477,54 +485,111 @@ function renderTable(logs) {
   }).join('');
 }
 
-// --- Per-row receipt system (localStorage, keyed by vehicle+date+work) ---
-function receiptKey(log) {
-  // Stable key: vehicle + date + first 40 chars of work
-  return `rcpt_${currentVehicle}_${log.date}_${(log.work || '').substring(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}`;
+// --- Per-row receipt system (Google Drive via Apps Script) ---
+
+function receiptMatchKey(log) {
+  // Match key: vehicle + date + first 40 chars of work (normalized)
+  return `${currentVehicle}||${log.date}||${(log.work || '').substring(0, 40).trim()}`;
 }
 
-function getReceipts(key) {
-  return JSON.parse(localStorage.getItem(key) || '[]');
+function getReceiptsForLog(log) {
+  const key = receiptMatchKey(log);
+  return allReceipts.filter(r => {
+    const rKey = `${r.vehicle}||${r.date}||${(r.work || '').substring(0, 40).trim()}`;
+    return rKey === key;
+  });
 }
 
 function escAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-let pendingUploadKey = '';
+let pendingUploadLog = null;
 
-function triggerUpload(key) {
-  pendingUploadKey = key;
+function triggerUpload(dateStr, workStr) {
+  if (!APPS_SCRIPT_URL) {
+    const url = prompt('Enter your Apps Script Web App URL (one-time setup).\nSee APPS_SCRIPT.js for deploy instructions:');
+    if (url) {
+      localStorage.setItem('apps_script_url', url);
+      location.reload();
+    }
+    return;
+  }
+  pendingUploadLog = { date: dateStr, work: workStr };
   document.getElementById('receiptFileInput').click();
 }
 
-document.getElementById('receiptFileInput').addEventListener('change', function(e) {
-  if (!pendingUploadKey) return;
+document.getElementById('receiptFileInput').addEventListener('change', async function(e) {
+  if (!pendingUploadLog) return;
   const files = e.target.files;
-  const existing = getReceipts(pendingUploadKey);
-  let loaded = 0;
-  Array.from(files).forEach(file => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      existing.push(reader.result);
-      loaded++;
-      if (loaded === files.length) {
-        localStorage.setItem(pendingUploadKey, JSON.stringify(existing));
-        pendingUploadKey = '';
-        render();
+  
+  for (const file of files) {
+    const base64 = await fileToBase64(file);
+    try {
+      const resp = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'upload',
+          vehicle: currentVehicle,
+          date: pendingUploadLog.date,
+          work: pendingUploadLog.work,
+          fileName: `${currentVehicle}_${pendingUploadLog.date}_${file.name}`,
+          mimeType: file.type || 'image/jpeg',
+          base64: base64
+        })
+      });
+      const result = await resp.json();
+      if (result.success) {
+        allReceipts.push({
+          vehicle: currentVehicle,
+          date: pendingUploadLog.date,
+          work: pendingUploadLog.work,
+          fileId: result.fileId,
+          fileUrl: result.fileUrl,
+          thumbUrl: result.thumbUrl,
+          fileName: file.name
+        });
       }
-    };
-    reader.readAsDataURL(file);
-  });
-  this.value = ''; // reset so same file can be re-selected
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+    }
+  }
+  
+  pendingUploadLog = null;
+  this.value = '';
+  render();
 });
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Strip data:...;base64, prefix
+      const b64 = reader.result.split(',')[1];
+      resolve(b64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function fetchAllReceipts() {
+  if (!APPS_SCRIPT_URL) return;
+  try {
+    const resp = await fetch(APPS_SCRIPT_URL + '?action=receipts');
+    const data = await resp.json();
+    allReceipts = data.receipts || [];
+  } catch (err) {
+    console.error('Failed to fetch receipts:', err);
+  }
+}
+
 // Lightbox
-let lightboxKey = '';
+let lightboxReceipts = [];
 let lightboxIdx = 0;
 
-function openLightbox(key, idx) {
-  const receipts = getReceipts(key);
-  if (!receipts.length) return;
-  lightboxKey = key;
+function openLightbox(dateStr, workStr, idx) {
+  const log = { date: dateStr, work: workStr };
+  lightboxReceipts = getReceiptsForLog(log);
+  if (!lightboxReceipts.length) return;
   lightboxIdx = idx;
   showLightboxImage();
   document.getElementById('receiptLightbox').classList.add('active');
@@ -535,36 +600,43 @@ function closeLightbox() {
 }
 
 function showLightboxImage() {
-  const receipts = getReceipts(lightboxKey);
-  document.getElementById('lightboxImg').src = receipts[lightboxIdx];
-  document.getElementById('lightboxInfo').textContent = `${lightboxIdx + 1} of ${receipts.length}`;
+  const r = lightboxReceipts[lightboxIdx];
+  // Use Drive direct view for full image
+  document.getElementById('lightboxImg').src = `https://lh3.googleusercontent.com/d/${r.fileId}=s800`;
+  document.getElementById('lightboxInfo').textContent = `${r.fileName || 'Receipt'} — ${lightboxIdx + 1} of ${lightboxReceipts.length}`;
 }
 
 function lightboxPrev() {
-  const receipts = getReceipts(lightboxKey);
-  lightboxIdx = (lightboxIdx - 1 + receipts.length) % receipts.length;
+  lightboxIdx = (lightboxIdx - 1 + lightboxReceipts.length) % lightboxReceipts.length;
   showLightboxImage();
 }
 
 function lightboxNext() {
-  const receipts = getReceipts(lightboxKey);
-  lightboxIdx = (lightboxIdx + 1) % receipts.length;
+  lightboxIdx = (lightboxIdx + 1) % lightboxReceipts.length;
   showLightboxImage();
 }
 
-function lightboxDelete() {
-  if (!confirm('Delete this receipt?')) return;
-  const receipts = getReceipts(lightboxKey);
-  receipts.splice(lightboxIdx, 1);
-  if (receipts.length === 0) {
-    localStorage.removeItem(lightboxKey);
-    closeLightbox();
-  } else {
-    localStorage.setItem(lightboxKey, JSON.stringify(receipts));
-    lightboxIdx = Math.min(lightboxIdx, receipts.length - 1);
-    showLightboxImage();
+async function lightboxDelete() {
+  if (!confirm('Delete this receipt from Google Drive?')) return;
+  const r = lightboxReceipts[lightboxIdx];
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete', fileId: r.fileId })
+    });
+    // Remove from local cache
+    allReceipts = allReceipts.filter(x => x.fileId !== r.fileId);
+    lightboxReceipts.splice(lightboxIdx, 1);
+    if (lightboxReceipts.length === 0) {
+      closeLightbox();
+    } else {
+      lightboxIdx = Math.min(lightboxIdx, lightboxReceipts.length - 1);
+      showLightboxImage();
+    }
+    render();
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
   }
-  render();
 }
 
 // Event handlers
@@ -655,15 +727,18 @@ function fmtDate(raw) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// Boot — fetch vehicle info from Sheet first, then maintenance logs
+// Boot — fetch vehicle info, maintenance logs, and receipts
 async function init() {
   try {
     await fetchVehicleInfo();
   } catch (e) {
     console.error('Failed to load vehicle info from Sheet:', e);
-    // Fallback: no vehicles to show
   }
   buildTabs();
+  
+  // Fetch receipts from Google Drive (via Apps Script) in parallel with vehicle data
+  const receiptPromise = fetchAllReceipts();
+  
   for (const name of Object.keys(VEHICLES)) {
     try {
       allData[name] = await fetchVehicleData(name);
@@ -674,7 +749,18 @@ async function init() {
       allData[name] = { info: VEHICLES[name]?.info || {}, logs: [] };
     }
   }
+  
+  await receiptPromise;
   render();
+  
+  // Show setup banner if Apps Script URL not configured
+  if (!APPS_SCRIPT_URL) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:0 24px 16px;padding:16px;background:var(--surface);border:1px solid var(--warn);border-radius:8px;color:var(--warn);font-size:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
+    banner.innerHTML = `<span>⚠️ <strong>Receipt uploads not connected.</strong> Deploy the Apps Script and click a 📷 button to set the URL.</span>
+      <a href="https://github.com/willslawrence/vehicle-maintenance/blob/main/APPS_SCRIPT.js" target="_blank" class="btn btn-secondary" style="text-decoration:none;font-size:13px;">📄 Setup Guide</a>`;
+    document.querySelector('.controls').before(banner);
+  }
 }
 
 init();
