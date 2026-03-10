@@ -723,7 +723,7 @@ function fmtDate(raw) {
     d = new Date(y, parseInt(parts[0]) - 1, parseInt(parts[1]));
   } else { return raw; }
   if (isNaN(d.getTime())) return raw;
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
 }
 
 // Boot — fetch vehicle info, maintenance logs, and receipts
