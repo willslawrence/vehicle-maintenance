@@ -352,13 +352,14 @@ function parseMaintenanceLogs(text, isTSV) {
     if (!row[3] || !row[3].trim()) continue;
     logs.push({
       done: row[0]?.toUpperCase() === 'TRUE',
-      date: row[1] || '',
+      date: (row[1] || '').trim(),
       km: row[2] ? parseInt(row[2].replace(/,/g, '')) : null,
-      work: row[3] || '',
-      performed_by: row[4] || '',
+      work: (row[3] || '').trim(),
+      performed_by: (row[4] || '').trim(),
       cost: row[5] ? parseFloat(row[5].replace(/,/g, '')) : null,
-      notes: row[6] || '',
-      receipts: row[7] ? row[7].split(',').map(u => u.trim()).filter(Boolean) : []
+      notes: (row[6] || '').trim(),
+      receipts: row[7] ? row[7].split(',').map(u => u.trim()).filter(Boolean) : [],
+      sheetRow: i + 1  // 1-indexed Sheet row number
     });
   }
   
@@ -456,10 +457,8 @@ function renderTable(logs) {
   }
   
   tbody.innerHTML = filtered.map(l => {
-    const dAttr = escAttr(l.date || '');
-    const wAttr = escAttr((l.work || '').substring(0, 40).trim());
+    const sr = l.sheetRow || 0;
     const rcpts = l.receipts || [];
-    // Extract fileIds from Drive URLs
     const fileIds = rcpts.map(u => { const m = u.match(/\/d\/([^/]+)/); return m ? m[1] : ''; }).filter(Boolean);
     
     let receiptHtml;
@@ -467,13 +466,12 @@ function renderTable(logs) {
       receiptHtml = `<td class="receipt-cell"><div class="receipt-badge">
         <img class="receipt-thumb" src="https://drive.google.com/thumbnail?id=${fileIds[0]}&sz=s200" onclick="openLightbox(${JSON.stringify(fileIds).replace(/"/g, '&quot;')}, 0)" alt="Receipt">
         ${fileIds.length > 1 ? `<span class="receipt-count">+${fileIds.length - 1}</span>` : ''}
-        <button class="btn-icon" title="Add more" onclick="triggerUpload('${dAttr}', '${wAttr}')" style="font-size:14px;margin-left:2px;">+</button>
+        <button class="btn-icon" title="Add more" onclick="triggerUpload(${sr})" style="font-size:14px;margin-left:2px;">+</button>
       </div></td>`;
     } else {
-      receiptHtml = `<td class="receipt-cell"><button class="btn-icon" title="Add receipt" onclick="triggerUpload('${dAttr}', '${wAttr}')">📷</button></td>`;
+      receiptHtml = `<td class="receipt-cell"><button class="btn-icon" title="Add receipt" onclick="triggerUpload(${sr})">📷</button></td>`;
     }
     
-    // Receipt links in notes column
     const rcptLinks = rcpts.map((u, i) => ` <a href="${u}" target="_blank" style="color:var(--accent);text-decoration:none">📎${rcpts.length > 1 ? (i+1) : ''}</a>`).join('');
     
     return `<tr>
@@ -493,15 +491,15 @@ function renderTable(logs) {
 
 function escAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-let pendingUploadLog = null;
+let pendingSheetRow = 0;
 
-function triggerUpload(dateStr, workStr) {
-  pendingUploadLog = { date: dateStr, work: workStr };
+function triggerUpload(sheetRow) {
+  pendingSheetRow = sheetRow;
   document.getElementById('receiptFileInput').click();
 }
 
 document.getElementById('receiptFileInput').addEventListener('change', async function(e) {
-  if (!pendingUploadLog) return;
+  if (!pendingSheetRow) return;
   const files = e.target.files;
   
   for (const file of files) {
@@ -512,9 +510,8 @@ document.getElementById('receiptFileInput').addEventListener('change', async fun
         body: JSON.stringify({
           action: 'upload',
           vehicle: currentVehicle,
-          date: pendingUploadLog.date,
-          work: pendingUploadLog.work,
-          fileName: `${currentVehicle}_${pendingUploadLog.date}_${file.name}`,
+          sheetRow: pendingSheetRow,
+          fileName: `${currentVehicle}_${file.name}`,
           mimeType: file.type || 'image/jpeg',
           base64: base64
         })
@@ -523,12 +520,7 @@ document.getElementById('receiptFileInput').addEventListener('change', async fun
       if (result.success) {
         // Update in-memory log so it shows immediately
         const logs = allData[currentVehicle]?.logs || [];
-        const searchWork = (pendingUploadLog.work || '').substring(0, 40).trim().toLowerCase();
-        const log = logs.find(l => {
-          const ld = (l.date || '').substring(0, 10);
-          const pd = (pendingUploadLog.date || '').substring(0, 10);
-          return ld === pd && (l.work || '').substring(0, 40).trim().toLowerCase() === searchWork;
-        });
+        const log = logs.find(l => l.sheetRow === pendingSheetRow);
         if (log) {
           if (!log.receipts) log.receipts = [];
           log.receipts.push(result.fileUrl);
@@ -539,7 +531,7 @@ document.getElementById('receiptFileInput').addEventListener('change', async fun
     }
   }
   
-  pendingUploadLog = null;
+  pendingSheetRow = 0;
   this.value = '';
   render();
 });

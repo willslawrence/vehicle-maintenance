@@ -1,6 +1,6 @@
 const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
 const DRIVE_FOLDER_ID = '1oI0UsdCtg7IWZoLYcXqbvgBQT7JXQ65g';
-const RECEIPT_COL = 8;
+const RECEIPT_COL = 8; // Column H
 
 function doPost(e) {
   try {
@@ -25,6 +25,7 @@ function getVehicleFolder(vehicleName) {
 }
 
 function handleUpload(data) {
+  // Upload file to Drive
   var folder = getVehicleFolder(data.vehicle || 'Other');
   var blob = Utilities.newBlob(
     Utilities.base64Decode(data.base64),
@@ -37,52 +38,31 @@ function handleUpload(data) {
   var fileUrl = 'https://drive.google.com/file/d/' + fileId + '/view';
   var thumbUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=s200';
 
-  // Write receipt link to column H of the matching log row
-  var ss = SpreadsheetApp.openById(SHEET_ID);
-  var tz = ss.getSpreadsheetTimeZone();
-  var sheet = ss.getSheetByName(data.vehicle);
+  // Write receipt link directly to the specified row in column H
   var matched = false;
-  
-  if (sheet) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(data.vehicle);
+
+  if (sheet && data.sheetRow) {
+    var row = parseInt(data.sheetRow);
+    // Ensure Receipt header exists
     var rows = sheet.getDataRange().getValues();
-    var headerIdx = -1;
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].some(function(c) { return String(c).indexOf('Work Performed') > -1; })) {
-        headerIdx = i;
+        var hCell = sheet.getRange(i + 1, RECEIPT_COL);
+        if (!hCell.getValue()) hCell.setValue('Receipt');
         break;
       }
     }
-    if (headerIdx >= 0) {
-      var hCell = sheet.getRange(headerIdx + 1, RECEIPT_COL);
-      if (!hCell.getValue()) hCell.setValue('Receipt');
-
-      var searchDate = String(data.date || '').substring(0, 10);
-      var searchWork = (data.work || '').substring(0, 40).trim().toLowerCase();
-
-      for (var r = headerIdx + 1; r < rows.length; r++) {
-        var rowDate = rows[r][1];
-        // Convert Date objects using spreadsheet timezone (not UTC)
-        if (rowDate instanceof Date) {
-          rowDate = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
-        } else {
-          rowDate = String(rowDate || '');
-        }
-        
-        var rowWork = String(rows[r][3] || '').substring(0, 40).trim().toLowerCase();
-        
-        if (rowDate.indexOf(searchDate) > -1 && rowWork === searchWork) {
-          var cell = sheet.getRange(r + 1, RECEIPT_COL);
-          var existing = String(cell.getValue() || '');
-          if (existing && existing.length > 0) {
-            cell.setValue(existing + ',' + fileUrl);
-          } else {
-            cell.setValue(fileUrl);
-          }
-          matched = true;
-          break;
-        }
-      }
+    // Write to the exact row
+    var cell = sheet.getRange(row, RECEIPT_COL);
+    var existing = String(cell.getValue() || '');
+    if (existing && existing.length > 0) {
+      cell.setValue(existing + ',' + fileUrl);
+    } else {
+      cell.setValue(fileUrl);
     }
+    matched = true;
   }
 
   return jsonResponse({ success: true, fileId: fileId, fileUrl: fileUrl, thumbUrl: thumbUrl, matched: matched });
