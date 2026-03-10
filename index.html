@@ -286,10 +286,11 @@ function switchVehicle(name) {
 
 // TSV row parser
 function parseTSVRows(text) {
-  // Don't filter empty rows — we need row indices to match Sheet row numbers
-  const lines = text.split('\n');
-  // Remove only trailing empty line (from final newline)
-  if (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  // Strip \r, keep ALL rows so indices match Sheet row numbers exactly
+  const clean = text.replace(/\r/g, '');
+  const lines = clean.split('\n');
+  // Remove only the final empty string from trailing newline
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
   return lines.map(line => line.split('\t'));
 }
 
