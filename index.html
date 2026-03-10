@@ -286,7 +286,11 @@ function switchVehicle(name) {
 
 // TSV row parser
 function parseTSVRows(text) {
-  return text.split('\n').filter(l => l.trim()).map(line => line.split('\t'));
+  // Don't filter empty rows — we need row indices to match Sheet row numbers
+  const lines = text.split('\n');
+  // Remove only trailing empty line (from final newline)
+  if (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.map(line => line.split('\t'));
 }
 
 // Generic CSV row parser
