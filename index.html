@@ -464,7 +464,7 @@ function renderTable(logs) {
     let receiptHtml;
     if (receipts.length) {
       receiptHtml = `<td class="receipt-cell"><div class="receipt-badge">
-        <img class="receipt-thumb" src="https://lh3.googleusercontent.com/d/${receipts[0].fileId}=s200" onclick="openLightbox('${dAttr}', '${wAttr}', 0)" alt="Receipt">
+        <img class="receipt-thumb" src="https://drive.google.com/thumbnail?id=${receipts[0].fileId}&sz=s200" onclick="openLightbox('${dAttr}', '${wAttr}', 0)" alt="Receipt">
         ${receipts.length > 1 ? `<span class="receipt-count">+${receipts.length - 1}</span>` : ''}
         <button class="btn-icon" title="Add more" onclick="triggerUpload('${dAttr}', '${wAttr}')" style="font-size:14px;margin-left:2px;">+</button>
       </div></td>`;
@@ -600,8 +600,8 @@ function closeLightbox() {
 
 function showLightboxImage() {
   const r = lightboxReceipts[lightboxIdx];
-  // Use Drive direct view for full image
-  document.getElementById('lightboxImg').src = `https://lh3.googleusercontent.com/d/${r.fileId}=s800`;
+  // Use Drive thumbnail for full image
+  document.getElementById('lightboxImg').src = `https://drive.google.com/thumbnail?id=${r.fileId}&sz=s800`;
   document.getElementById('lightboxInfo').textContent = `${r.fileName || 'Receipt'} — ${lightboxIdx + 1} of ${lightboxReceipts.length}`;
 }
 

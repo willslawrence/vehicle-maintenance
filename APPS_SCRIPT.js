@@ -10,7 +10,7 @@
  * 4. Copy the Web App URL → paste into index.html APPS_SCRIPT_URL
  *
  * Handles:
- *   POST /upload — saves image to Drive folder, logs to Receipts tab
+ *   POST /upload — saves image to Drive folder (per vehicle), logs to Receipts tab
  *   GET /receipts — returns all receipts from the Receipts tab
  */
 
@@ -47,9 +47,24 @@ function doGet(e) {
   }
 }
 
+/**
+ * Get or create a subfolder per vehicle inside the main receipts folder.
+ * e.g., Receipts / Xterra / ...
+ *       Receipts / Fortuner / ...
+ */
+function getVehicleFolder(vehicleName) {
+  const parent = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  const folders = parent.getFoldersByName(vehicleName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  // Create subfolder for this vehicle
+  return parent.createFolder(vehicleName);
+}
+
 function handleUpload(data) {
   // data: { action, vehicle, date, work, fileName, mimeType, base64 }
-  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  const folder = getVehicleFolder(data.vehicle || 'Other');
   
   // Decode base64 → blob
   const blob = Utilities.newBlob(
@@ -62,8 +77,8 @@ function handleUpload(data) {
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const fileId = file.getId();
-  const fileUrl = `https://drive.google.com/file/d/${fileId}/view`;
-  const thumbUrl = `https://lh3.googleusercontent.com/d/${fileId}=s200`;
+  const fileUrl = 'https://drive.google.com/file/d/' + fileId + '/view';
+  const thumbUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=s200';
   
   // Log to Receipts tab
   const sheet = getOrCreateReceiptsTab();
@@ -92,7 +107,7 @@ function handleDelete(data) {
   const rows = sheet.getDataRange().getValues();
   
   // Find and delete row (fileId is column D, index 3)
-  for (let i = rows.length - 1; i >= 1; i--) {
+  for (var i = rows.length - 1; i >= 1; i--) {
     if (rows[i][3] === data.fileId) {
       sheet.deleteRow(i + 1);
       break;
@@ -110,9 +125,9 @@ function handleDelete(data) {
 function handleGetReceipts() {
   const sheet = getOrCreateReceiptsTab();
   const rows = sheet.getDataRange().getValues();
-  const receipts = [];
+  var receipts = [];
   
-  for (let i = 1; i < rows.length; i++) {
+  for (var i = 1; i < rows.length; i++) {
     receipts.push({
       vehicle: rows[i][0],
       date: rows[i][1],
@@ -130,7 +145,7 @@ function handleGetReceipts() {
 
 function getOrCreateReceiptsTab() {
   const ss = SpreadsheetApp.openById(SHEET_ID);
-  let sheet = ss.getSheetByName(RECEIPTS_TAB);
+  var sheet = ss.getSheetByName(RECEIPTS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(RECEIPTS_TAB);
     sheet.appendRow(['Vehicle', 'Date', 'Work', 'FileId', 'FileUrl', 'ThumbUrl', 'FileName', 'UploadedAt']);
