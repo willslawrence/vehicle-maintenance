@@ -295,8 +295,9 @@ function buildTabs() {
 
 function switchVehicle(name) {
   currentVehicle = name;
+  const tabsEl = document.getElementById('vehicleTabs');
   document.querySelectorAll('.vehicle-tab').forEach(t => t.classList.remove('active'));
-  [...tabsEl.children].find(t => t.textContent.includes(name)).classList.add('active');
+  [...tabsEl.children].find(t => t.textContent.includes(name))?.classList.add('active');
   render();
 }
 
