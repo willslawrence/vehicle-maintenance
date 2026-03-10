@@ -252,7 +252,7 @@ const TAB_GIDS = { 'Xterra': '347377224', 'Fortuner': '84833382' };
 // Google Apps Script Web App URL — handles receipt upload/fetch via Google Drive
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTaupJI4hg54_Uf2aj0RZ0WeQsU6ONG7RX2e2HvYqCm11T_Xm3iLGF52mcuRE60GUe/exec';
 
-let allReceipts = []; // fetched from Apps Script at boot
+// Receipts are now stored directly in each vehicle log tab (column H)
 
 let VEHICLES = {}; // Populated from Sheet at boot
 let currentVehicle = '';
@@ -359,7 +359,8 @@ function parseMaintenanceLogs(text, vehicleName) {
         work: row[3] || '',
         performed_by: row[4] || '',
         cost: row[5] ? parseFloat(row[5].replace(/,/g, '')) : null,
-        notes: row[6] || ''
+        notes: row[6] || '',
+        receipts: row[7] ? row[7].split(',').map(u => u.trim()).filter(Boolean) : []
       });
     }
   }
@@ -459,19 +460,26 @@ function renderTable(logs) {
   }
   
   tbody.innerHTML = filtered.map(l => {
-    const receipts = getReceiptsForLog(l);
     const dAttr = escAttr(l.date || '');
     const wAttr = escAttr((l.work || '').substring(0, 40).trim());
+    const rcpts = l.receipts || [];
+    // Extract fileIds from Drive URLs
+    const fileIds = rcpts.map(u => { const m = u.match(/\/d\/([^/]+)/); return m ? m[1] : ''; }).filter(Boolean);
+    
     let receiptHtml;
-    if (receipts.length) {
+    if (fileIds.length) {
       receiptHtml = `<td class="receipt-cell"><div class="receipt-badge">
-        <img class="receipt-thumb" src="https://drive.google.com/thumbnail?id=${receipts[0].fileId}&sz=s200" onclick="openLightbox('${dAttr}', '${wAttr}', 0)" alt="Receipt">
-        ${receipts.length > 1 ? `<span class="receipt-count">+${receipts.length - 1}</span>` : ''}
+        <img class="receipt-thumb" src="https://drive.google.com/thumbnail?id=${fileIds[0]}&sz=s200" onclick="openLightbox(${JSON.stringify(fileIds).replace(/"/g, '&quot;')}, 0)" alt="Receipt">
+        ${fileIds.length > 1 ? `<span class="receipt-count">+${fileIds.length - 1}</span>` : ''}
         <button class="btn-icon" title="Add more" onclick="triggerUpload('${dAttr}', '${wAttr}')" style="font-size:14px;margin-left:2px;">+</button>
       </div></td>`;
     } else {
       receiptHtml = `<td class="receipt-cell"><button class="btn-icon" title="Add receipt" onclick="triggerUpload('${dAttr}', '${wAttr}')">📷</button></td>`;
     }
+    
+    // Receipt links in notes column
+    const rcptLinks = rcpts.map((u, i) => ` <a href="${u}" target="_blank" style="color:var(--accent);text-decoration:none">📎${rcpts.length > 1 ? (i+1) : ''}</a>`).join('');
+    
     return `<tr>
       <td class="done-cell">${l.done ? '<span class="done-check">✓</span>' : '<span class="done-pending">○</span>'}</td>
       <td class="date-cell">${fmtDate(l.date)}</td>
@@ -479,40 +487,19 @@ function renderTable(logs) {
       <td>${escHtml(l.work)}</td>
       <td>${escHtml(l.performed_by) || '—'}</td>
       <td class="cost-cell">${l.cost != null ? l.cost.toLocaleString() + ' SAR' : '—'}</td>
-      <td class="notes-cell" title="${escHtml(l.notes)}">${escHtml(truncate(l.notes, 80))}${receipts.length ? receipts.map((r, i) => ` <a href="${r.fileUrl}" target="_blank" style="color:var(--accent);text-decoration:none" title="${r.fileName}">📎${receipts.length > 1 ? (i+1) : ''}</a>`).join('') : ''}</td>
+      <td class="notes-cell" title="${escHtml(l.notes)}">${escHtml(truncate(l.notes, 80))}${rcptLinks}</td>
       ${receiptHtml}
     </tr>`;
   }).join('');
 }
 
-// --- Per-row receipt system (Google Drive via Apps Script) ---
-
-function receiptMatchKey(log) {
-  // Match key: vehicle + date + first 40 chars of work (normalized)
-  return `${currentVehicle}||${log.date}||${(log.work || '').substring(0, 40).trim()}`;
-}
-
-function getReceiptsForLog(log) {
-  const key = receiptMatchKey(log);
-  return allReceipts.filter(r => {
-    const rKey = `${r.vehicle}||${r.date}||${(r.work || '').substring(0, 40).trim()}`;
-    return rKey === key;
-  });
-}
+// --- Per-row receipt system (Drive links stored in Sheet column H) ---
 
 function escAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
 let pendingUploadLog = null;
 
 function triggerUpload(dateStr, workStr) {
-  if (!APPS_SCRIPT_URL) {
-    const url = prompt('Enter your Apps Script Web App URL (one-time setup).\nSee APPS_SCRIPT.js for deploy instructions:');
-    if (url) {
-      localStorage.setItem('apps_script_url', url);
-      location.reload();
-    }
-    return;
-  }
   pendingUploadLog = { date: dateStr, work: workStr };
   document.getElementById('receiptFileInput').click();
 }
@@ -538,15 +525,18 @@ document.getElementById('receiptFileInput').addEventListener('change', async fun
       });
       const result = await resp.json();
       if (result.success) {
-        allReceipts.push({
-          vehicle: currentVehicle,
-          date: pendingUploadLog.date,
-          work: pendingUploadLog.work,
-          fileId: result.fileId,
-          fileUrl: result.fileUrl,
-          thumbUrl: result.thumbUrl,
-          fileName: file.name
+        // Update in-memory log so it shows immediately
+        const logs = allData[currentVehicle]?.logs || [];
+        const searchWork = (pendingUploadLog.work || '').substring(0, 40).trim().toLowerCase();
+        const log = logs.find(l => {
+          const ld = (l.date || '').substring(0, 10);
+          const pd = (pendingUploadLog.date || '').substring(0, 10);
+          return ld === pd && (l.work || '').substring(0, 40).trim().toLowerCase() === searchWork;
         });
+        if (log) {
+          if (!log.receipts) log.receipts = [];
+          log.receipts.push(result.fileUrl);
+        }
       }
     } catch (err) {
       alert('Upload failed: ' + err.message);
@@ -561,36 +551,20 @@ document.getElementById('receiptFileInput').addEventListener('change', async fun
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      // Strip data:...;base64, prefix
-      const b64 = reader.result.split(',')[1];
-      resolve(b64);
-    };
+    reader.onload = () => resolve(reader.result.split(',')[1]);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
-async function fetchAllReceipts() {
-  if (!APPS_SCRIPT_URL) return;
-  try {
-    const resp = await fetch(APPS_SCRIPT_URL + '?action=receipts');
-    const data = await resp.json();
-    allReceipts = data.receipts || [];
-  } catch (err) {
-    console.error('Failed to fetch receipts:', err);
-  }
-}
-
-// Lightbox
-let lightboxReceipts = [];
+// Lightbox — works with array of fileIds
+let lightboxFileIds = [];
 let lightboxIdx = 0;
 
-function openLightbox(dateStr, workStr, idx) {
-  const log = { date: dateStr, work: workStr };
-  lightboxReceipts = getReceiptsForLog(log);
-  if (!lightboxReceipts.length) return;
-  lightboxIdx = idx;
+function openLightbox(fileIds, idx) {
+  if (!fileIds || !fileIds.length) return;
+  lightboxFileIds = fileIds;
+  lightboxIdx = idx || 0;
   showLightboxImage();
   document.getElementById('receiptLightbox').classList.add('active');
 }
@@ -600,37 +574,37 @@ function closeLightbox() {
 }
 
 function showLightboxImage() {
-  const r = lightboxReceipts[lightboxIdx];
-  // Use Drive thumbnail for full image
-  document.getElementById('lightboxImg').src = `https://drive.google.com/thumbnail?id=${r.fileId}&sz=s800`;
-  document.getElementById('lightboxInfo').textContent = `${r.fileName || 'Receipt'} — ${lightboxIdx + 1} of ${lightboxReceipts.length}`;
+  const fid = lightboxFileIds[lightboxIdx];
+  document.getElementById('lightboxImg').src = `https://drive.google.com/thumbnail?id=${fid}&sz=s800`;
+  document.getElementById('lightboxInfo').textContent = `Receipt ${lightboxIdx + 1} of ${lightboxFileIds.length}`;
 }
 
 function lightboxPrev() {
-  lightboxIdx = (lightboxIdx - 1 + lightboxReceipts.length) % lightboxReceipts.length;
+  lightboxIdx = (lightboxIdx - 1 + lightboxFileIds.length) % lightboxFileIds.length;
   showLightboxImage();
 }
 
 function lightboxNext() {
-  lightboxIdx = (lightboxIdx + 1) % lightboxReceipts.length;
+  lightboxIdx = (lightboxIdx + 1) % lightboxFileIds.length;
   showLightboxImage();
 }
 
 async function lightboxDelete() {
   if (!confirm('Delete this receipt from Google Drive?')) return;
-  const r = lightboxReceipts[lightboxIdx];
+  const fid = lightboxFileIds[lightboxIdx];
   try {
     await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'delete', fileId: r.fileId })
+      body: JSON.stringify({ action: 'delete', fileId: fid, vehicle: currentVehicle })
     });
-    // Remove from local cache
-    allReceipts = allReceipts.filter(x => x.fileId !== r.fileId);
-    lightboxReceipts.splice(lightboxIdx, 1);
-    if (lightboxReceipts.length === 0) {
+    lightboxFileIds.splice(lightboxIdx, 1);
+    const fileUrl = `https://drive.google.com/file/d/${fid}/view`;
+    const logs = allData[currentVehicle]?.logs || [];
+    logs.forEach(l => { if (l.receipts) l.receipts = l.receipts.filter(u => u !== fileUrl); });
+    if (lightboxFileIds.length === 0) {
       closeLightbox();
     } else {
-      lightboxIdx = Math.min(lightboxIdx, lightboxReceipts.length - 1);
+      lightboxIdx = Math.min(lightboxIdx, lightboxFileIds.length - 1);
       showLightboxImage();
     }
     render();
@@ -736,9 +710,6 @@ async function init() {
   }
   buildTabs();
   
-  // Fetch receipts from Google Drive (via Apps Script) in parallel with vehicle data
-  const receiptPromise = fetchAllReceipts();
-  
   for (const name of Object.keys(VEHICLES)) {
     try {
       allData[name] = await fetchVehicleData(name);
@@ -750,7 +721,6 @@ async function init() {
     }
   }
   
-  await receiptPromise;
   render();
   
 
