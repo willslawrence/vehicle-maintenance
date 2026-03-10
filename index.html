@@ -245,8 +245,7 @@ tr:hover { background: var(--surface2); }
 
 <script>
 const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
-const VEHICLE_INFO_GID = '1449143954'; // "Vehicle Info" tab — single source of truth
-// Tab GIDs for maintenance logs (keyed by vehicle name from Vehicle Info tab)
+// Each vehicle has its own tab — info in rows 1-2, logs from row 3+
 const TAB_GIDS = { 'Xterra': '347377224', 'Fortuner': '84833382' };
 
 // Google Apps Script Web App URL — handles receipt upload/fetch via Google Drive
@@ -254,7 +253,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTaupJI4hg54_U
 
 // Receipts are now stored directly in each vehicle log tab (column H)
 
-let VEHICLES = {}; // Populated from Sheet at boot
+let VEHICLES = {}; // Populated from each tab's first rows
 let currentVehicle = '';
 let allData = {};
 let currentFilter = 'all';
@@ -262,37 +261,16 @@ let searchTerm = '';
 let sortCol = 'date';
 let sortDir = -1; // -1 = newest first
 
-async function fetchVehicleInfo() {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${VEHICLE_INFO_GID}`;
-  const resp = await fetch(url);
-  const text = await resp.text();
-  const rows = parseCSVRows(text);
-  if (rows.length < 2) return;
-  const headers = rows[0].map(h => h.trim());
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h] = (row[idx] || '').trim(); });
-    const name = obj.Vehicle;
-    if (!name) continue;
-    VEHICLES[name] = {
-      gid: TAB_GIDS[name] || '',
-      icon: obj.Icon || '🚗',
-      info: { Make: obj.Make, Model: obj.Model, Year: obj.Year, VIN: obj.VIN, Engine: obj.Engine },
-      estValue: parseFloat(obj.EstValue) || 0
-    };
-  }
-}
-
 function buildTabs() {
   const tabsEl = document.getElementById('vehicleTabs');
   tabsEl.innerHTML = '';
-  const names = Object.keys(VEHICLES);
+  const names = Object.keys(TAB_GIDS);
   if (!currentVehicle && names.length) currentVehicle = names[0];
   names.forEach(name => {
+    const icon = VEHICLES[name]?.icon || '🚗';
     const btn = document.createElement('button');
     btn.className = 'vehicle-tab' + (name === currentVehicle ? ' active' : '');
-    btn.textContent = VEHICLES[name].icon + ' ' + name;
+    btn.textContent = icon + ' ' + name;
     btn.onclick = () => switchVehicle(name);
     tabsEl.appendChild(btn);
   });
@@ -327,45 +305,58 @@ function parseCSVRows(text) {
 }
 
 async function fetchVehicleData(name) {
-  const gid = VEHICLES[name].gid;
-  if (!gid) return { info: VEHICLES[name]?.info || {}, logs: [] };
+  const gid = TAB_GIDS[name];
+  if (!gid) return { info: {}, logs: [], icon: '🚗', estValue: 0 };
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
   const resp = await fetch(url);
   const text = await resp.text();
-  return parseMaintenanceLogs(text, name);
+  return parseMaintenanceLogs(text);
 }
 
-function parseMaintenanceLogs(text, vehicleName) {
+function parseMaintenanceLogs(text) {
   const parsed = parseCSVRows(text);
-  // Vehicle info comes from the Vehicle Info tab (already in VEHICLES)
-  const info = VEHICLES[vehicleName]?.info || {};
   
-  // Find header row (the one with "Work Performed") or the sub-header row
+  // Row 1 = info headers (Vehicle, Make, Model, Year, VIN, Engine, Icon, EstValue)
+  // Row 2 = info values
+  // Row 3+ = log header (Done, Date, KM, Work Performed...) then data
+  let info = {};
+  let icon = '🚗';
+  let estValue = 0;
+  
+  if (parsed.length >= 2) {
+    const infoHeaders = parsed[0].map(h => h.trim());
+    const infoValues = parsed[1];
+    const infoObj = {};
+    infoHeaders.forEach((h, idx) => { infoObj[h] = (infoValues[idx] || '').trim(); });
+    info = { Make: infoObj.Make || '', Model: infoObj.Model || '', Year: infoObj.Year || '', VIN: infoObj.VIN || '', Engine: infoObj.Engine || '' };
+    icon = infoObj.Icon || '🚗';
+    estValue = parseFloat(infoObj.EstValue) || 0;
+  }
+  
+  // Find log header row (the one with "Work Performed")
   let headerIdx = -1;
   for (let i = 0; i < parsed.length; i++) {
     if (parsed[i].some(c => c.includes('Work Performed'))) { headerIdx = i; break; }
   }
-  if (headerIdx === -1) headerIdx = 1;
+  if (headerIdx === -1) headerIdx = 2;
   
   const logs = [];
-  if (headerIdx >= 0) {
-    for (let i = headerIdx + 1; i < parsed.length; i++) {
-      const row = parsed[i];
-      if (!row[3] || !row[3].trim()) continue;
-      logs.push({
-        done: row[0]?.toUpperCase() === 'TRUE',
-        date: row[1] || '',
-        km: row[2] ? parseInt(row[2].replace(/,/g, '')) : null,
-        work: row[3] || '',
-        performed_by: row[4] || '',
-        cost: row[5] ? parseFloat(row[5].replace(/,/g, '')) : null,
-        notes: row[6] || '',
-        receipts: row[7] ? row[7].split(',').map(u => u.trim()).filter(Boolean) : []
-      });
-    }
+  for (let i = headerIdx + 1; i < parsed.length; i++) {
+    const row = parsed[i];
+    if (!row[3] || !row[3].trim()) continue;
+    logs.push({
+      done: row[0]?.toUpperCase() === 'TRUE',
+      date: row[1] || '',
+      km: row[2] ? parseInt(row[2].replace(/,/g, '')) : null,
+      work: row[3] || '',
+      performed_by: row[4] || '',
+      cost: row[5] ? parseFloat(row[5].replace(/,/g, '')) : null,
+      notes: row[6] || '',
+      receipts: row[7] ? row[7].split(',').map(u => u.trim()).filter(Boolean) : []
+    });
   }
   
-  return { info, logs };
+  return { info, logs, icon, estValue };
 }
 
 function render() {
@@ -379,7 +370,6 @@ function render() {
 
 function renderHeader(info) {
   const el = document.getElementById('vehicleHeader');
-  // info comes from VEHICLES which is populated from the "Vehicle Info" Sheet tab
   el.innerHTML = `
     <div class="field"><div class="label">Make</div><div class="value">${info.Make || '—'}</div></div>
     <div class="field"><div class="label">Model</div><div class="value">${info.Model || '—'}</div></div>
@@ -390,11 +380,11 @@ function renderHeader(info) {
 }
 
 function renderStats(logs) {
-  const v = VEHICLES[currentVehicle] || {};
+  const d = allData[currentVehicle] || {};
   const totalCost = logs.reduce((s, l) => s + (l.cost || 0), 0);
   const lastService = logs.filter(l => l.date).sort((a,b) => b.date.localeCompare(a.date))[0];
   const maxKm = Math.max(...logs.filter(l => l.km).map(l => l.km), 0);
-  const estValue = v.estValue || 0;
+  const estValue = d.estValue || 0;
   
   // Next oil change — computed from last oil change in logs (every 10,000 km or 6 months)
   let oilHtml = '—';
@@ -701,29 +691,24 @@ function fmtDate(raw) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
 }
 
-// Boot — fetch vehicle info, maintenance logs, and receipts
+// Boot — fetch all vehicle data from each tab
 async function init() {
-  try {
-    await fetchVehicleInfo();
-  } catch (e) {
-    console.error('Failed to load vehicle info from Sheet:', e);
-  }
-  buildTabs();
+  buildTabs(); // initial tabs from TAB_GIDS keys
   
-  for (const name of Object.keys(VEHICLES)) {
+  for (const name of Object.keys(TAB_GIDS)) {
     try {
       allData[name] = await fetchVehicleData(name);
+      VEHICLES[name] = { icon: allData[name].icon, estValue: allData[name].estValue };
       const pending = JSON.parse(localStorage.getItem(`pending_${name}`) || '[]');
       allData[name].logs.push(...pending);
     } catch (e) {
       console.error(`Failed to load ${name}:`, e);
-      allData[name] = { info: VEHICLES[name]?.info || {}, logs: [] };
+      allData[name] = { info: {}, logs: [], icon: '🚗', estValue: 0 };
     }
   }
   
+  buildTabs(); // rebuild with icons from data
   render();
-  
-
 }
 
 init();
