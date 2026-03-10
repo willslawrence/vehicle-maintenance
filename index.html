@@ -57,18 +57,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 /* Table */
 .table-container { margin: 0 24px 24px; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
-th { background: var(--surface2); padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); white-space: nowrap; cursor: pointer; user-select: none; }
+th { background: var(--surface2); padding: 8px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); white-space: nowrap; cursor: pointer; user-select: none; }
 th:hover { color: var(--text); }
 th .sort-arrow { margin-left: 4px; opacity: 0.3; }
 th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
-td { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 14px; }
+td { padding: 10px 12px; border-top: 1px solid var(--border); font-size: 12px; }
 tr:hover { background: var(--surface2); }
-.done-cell { text-align: center; }
-.done-check { color: var(--accent2); font-size: 18px; }
-.done-pending { color: var(--warn); font-size: 18px; }
+.done-cell { text-align: center; width: 40px; max-width: 40px; }
+.done-check { color: var(--accent2); font-size: 14px; }
+.done-pending { color: var(--warn); font-size: 14px; }
 .cost-cell { text-align: right; font-weight: 500; white-space: nowrap; }
 .date-cell { white-space: nowrap; }
-.notes-cell { max-width: 300px; font-size: 13px; color: var(--text-dim); }
+.notes-cell { max-width: 250px; font-size: 11px; color: var(--text-dim); }
 .km-cell { text-align: right; white-space: nowrap; }
 
 /* Modal */
@@ -144,7 +144,6 @@ tr:hover { background: var(--surface2); }
   .stats-bar { grid-template-columns: repeat(2, 1fr); }
   /* Hide less important columns on small screens */
   th:nth-child(5), td:nth-child(5) { display: none; } /* Performed By */
-  th:nth-child(7), td:nth-child(7) { display: none; } /* Notes */
 }
 
 /* Print */
