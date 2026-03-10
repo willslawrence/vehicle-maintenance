@@ -245,31 +245,53 @@ tr:hover { background: var(--surface2); }
 
 <script>
 const SHEET_ID = '1_mIU0Ocxof2WalBQucHZj2SIhfGCtQZfzmZZvJStYV4';
-const VEHICLES = {
-  'Xterra': { gid: '347377224', icon: '🚙', info: {
-    Make: 'Nissan', Model: 'Xterra 4.0 S', Year: '2010', VIN: '5N1AN0NW4AC500862', Engine: '4.0L V6'
-  }, nextOil: { date: '2026-09-05', km: 204712 }, estValue: 27000 },
-  'Fortuner': { gid: '84833382', icon: '🚗', info: {
-    Make: 'Toyota', Model: 'Fortuner', Year: '2017', VIN: 'MHFYU59G7F7041427', Engine: '2.7L 4-Cyl'
-  }, nextOil: null, estValue: 30000 }
-};
+const VEHICLE_INFO_GID = '1449143954'; // "Vehicle Info" tab — single source of truth
+// Tab GIDs for maintenance logs (keyed by vehicle name from Vehicle Info tab)
+const TAB_GIDS = { 'Xterra': '347377224', 'Fortuner': '84833382' };
 
-let currentVehicle = 'Xterra';
+let VEHICLES = {}; // Populated from Sheet at boot
+let currentVehicle = '';
 let allData = {};
 let currentFilter = 'all';
 let searchTerm = '';
 let sortCol = 'date';
 let sortDir = -1; // -1 = newest first
 
-// Init tabs
-const tabsEl = document.getElementById('vehicleTabs');
-Object.keys(VEHICLES).forEach(name => {
-  const btn = document.createElement('button');
-  btn.className = 'vehicle-tab' + (name === currentVehicle ? ' active' : '');
-  btn.textContent = VEHICLES[name].icon + ' ' + name;
-  btn.onclick = () => switchVehicle(name);
-  tabsEl.appendChild(btn);
-});
+async function fetchVehicleInfo() {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${VEHICLE_INFO_GID}`;
+  const resp = await fetch(url);
+  const text = await resp.text();
+  const rows = parseCSVRows(text);
+  if (rows.length < 2) return;
+  const headers = rows[0].map(h => h.trim());
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (row[idx] || '').trim(); });
+    const name = obj.Vehicle;
+    if (!name) continue;
+    VEHICLES[name] = {
+      gid: TAB_GIDS[name] || '',
+      icon: obj.Icon || '🚗',
+      info: { Make: obj.Make, Model: obj.Model, Year: obj.Year, VIN: obj.VIN, Engine: obj.Engine },
+      estValue: parseFloat(obj.EstValue) || 0
+    };
+  }
+}
+
+function buildTabs() {
+  const tabsEl = document.getElementById('vehicleTabs');
+  tabsEl.innerHTML = '';
+  const names = Object.keys(VEHICLES);
+  if (!currentVehicle && names.length) currentVehicle = names[0];
+  names.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'vehicle-tab' + (name === currentVehicle ? ' active' : '');
+    btn.textContent = VEHICLES[name].icon + ' ' + name;
+    btn.onclick = () => switchVehicle(name);
+    tabsEl.appendChild(btn);
+  });
+}
 
 function switchVehicle(name) {
   currentVehicle = name;
@@ -278,17 +300,10 @@ function switchVehicle(name) {
   render();
 }
 
-async function fetchVehicleData(name) {
-  const gid = VEHICLES[name].gid;
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
-  const resp = await fetch(url);
-  const text = await resp.text();
-  return parseCSV(text);
-}
-
-function parseCSV(text) {
+// Generic CSV row parser (reused by vehicle info + maintenance logs)
+function parseCSVRows(text) {
   const lines = text.split('\n').filter(l => l.trim());
-  const parsed = lines.map(line => {
+  return lines.map(line => {
     const cells = [];
     let current = '';
     let inQuotes = false;
@@ -303,24 +318,34 @@ function parseCSV(text) {
     cells.push(current);
     return cells;
   });
-  
-  // Use hardcoded vehicle info from VEHICLES config
-  const info = VEHICLES[currentVehicle]?.info || {};
+}
+
+async function fetchVehicleData(name) {
+  const gid = VEHICLES[name].gid;
+  if (!gid) return { info: VEHICLES[name]?.info || {}, logs: [] };
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  const resp = await fetch(url);
+  const text = await resp.text();
+  return parseMaintenanceLogs(text, name);
+}
+
+function parseMaintenanceLogs(text, vehicleName) {
+  const parsed = parseCSVRows(text);
+  // Vehicle info comes from the Vehicle Info tab (already in VEHICLES)
+  const info = VEHICLES[vehicleName]?.info || {};
   
   // Find header row (the one with "Work Performed") or the sub-header row
   let headerIdx = -1;
   for (let i = 0; i < parsed.length; i++) {
     if (parsed[i].some(c => c.includes('Work Performed'))) { headerIdx = i; break; }
   }
-  // If no header found, assume row 1 (index 1) is the header
   if (headerIdx === -1) headerIdx = 1;
   
-  // Extract log entries
   const logs = [];
   if (headerIdx >= 0) {
     for (let i = headerIdx + 1; i < parsed.length; i++) {
       const row = parsed[i];
-      if (!row[3] || !row[3].trim()) continue; // skip empty work rows
+      if (!row[3] || !row[3].trim()) continue;
       logs.push({
         done: row[0]?.toUpperCase() === 'TRUE',
         date: row[1] || '',
@@ -348,35 +373,34 @@ function render() {
 
 function renderHeader(info) {
   const el = document.getElementById('vehicleHeader');
-  const vInfo = VEHICLES[currentVehicle]?.info || {};
-  
+  // info comes from VEHICLES which is populated from the "Vehicle Info" Sheet tab
   el.innerHTML = `
-    <div class="field"><div class="label">Make</div><div class="value">${vInfo.Make || '—'}</div></div>
-    <div class="field"><div class="label">Model</div><div class="value">${vInfo.Model || '—'}</div></div>
-    <div class="field"><div class="label">Year</div><div class="value">${vInfo.Year || '—'}</div></div>
-    <div class="field"><div class="label">VIN</div><div class="value" style="font-size:14px;font-family:monospace">${vInfo.VIN || '—'}</div></div>
-    <div class="field"><div class="label">Engine</div><div class="value">${vInfo.Engine || '—'}</div></div>
+    <div class="field"><div class="label">Make</div><div class="value">${info.Make || '—'}</div></div>
+    <div class="field"><div class="label">Model</div><div class="value">${info.Model || '—'}</div></div>
+    <div class="field"><div class="label">Year</div><div class="value">${info.Year || '—'}</div></div>
+    <div class="field"><div class="label">VIN</div><div class="value" style="font-size:14px;font-family:monospace">${info.VIN || '—'}</div></div>
+    <div class="field"><div class="label">Engine</div><div class="value">${info.Engine || '—'}</div></div>
   `;
 }
 
 function renderStats(logs) {
-  const v = VEHICLES[currentVehicle];
+  const v = VEHICLES[currentVehicle] || {};
   const totalCost = logs.reduce((s, l) => s + (l.cost || 0), 0);
   const lastService = logs.filter(l => l.date).sort((a,b) => b.date.localeCompare(a.date))[0];
   const maxKm = Math.max(...logs.filter(l => l.km).map(l => l.km), 0);
   const estValue = v.estValue || 0;
   
-  // Next oil change
+  // Next oil change — computed from last oil change in logs (every 10,000 km or 6 months)
   let oilHtml = '—';
-  let oilClass = '';
-  if (v.nextOil) {
-    const oilDate = new Date(v.nextOil.date);
-    const now = new Date();
-    const daysLeft = Math.ceil((oilDate - now) / (1000*60*60*24));
-    const kmLeft = v.nextOil.km - maxKm;
-    oilClass = (daysLeft < 30 || kmLeft < 1000) ? 'danger' : (daysLeft < 60 || kmLeft < 3000) ? 'warn' : 'green';
-    const dateStr = oilDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    oilHtml = `<div style="font-size:16px;font-weight:700" class="${oilClass}">${dateStr}</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px">or ${v.nextOil.km.toLocaleString()} km</div>`;
+  const oilLogs = logs.filter(l => l.work.toLowerCase().includes('oil change') && l.done);
+  if (oilLogs.length) {
+    const lastOil = oilLogs.sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+    if (lastOil.km) {
+      const nextOilKm = lastOil.km + 10000;
+      const kmLeft = nextOilKm - maxKm;
+      const oilClass = kmLeft < 1000 ? 'danger' : kmLeft < 3000 ? 'warn' : 'green';
+      oilHtml = `<div style="font-size:16px;font-weight:700" class="${oilClass}">${nextOilKm.toLocaleString()} km</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px">${kmLeft.toLocaleString()} km remaining</div>`;
+    }
   }
   
   document.getElementById('statsBar').innerHTML = `
@@ -581,17 +605,23 @@ function fmtDate(raw) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// Boot
+// Boot — fetch vehicle info from Sheet first, then maintenance logs
 async function init() {
+  try {
+    await fetchVehicleInfo();
+  } catch (e) {
+    console.error('Failed to load vehicle info from Sheet:', e);
+    // Fallback: no vehicles to show
+  }
+  buildTabs();
   for (const name of Object.keys(VEHICLES)) {
     try {
       allData[name] = await fetchVehicleData(name);
-      // Merge local pending entries
       const pending = JSON.parse(localStorage.getItem(`pending_${name}`) || '[]');
       allData[name].logs.push(...pending);
     } catch (e) {
       console.error(`Failed to load ${name}:`, e);
-      allData[name] = { info: {}, logs: [] };
+      allData[name] = { info: VEHICLES[name]?.info || {}, logs: [] };
     }
   }
   render();
