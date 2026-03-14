@@ -431,8 +431,23 @@ function renderStats(logs) {
     }
   }
   
+  // Average monthly MX cost — find earliest date as purchase/ownership start
+  let avgMonthlyHtml = '—';
+  const datedLogs = logs.filter(l => l.date).sort((a,b) => a.date.localeCompare(b.date));
+  if (datedLogs.length > 0) {
+    const firstDate = new Date(datedLogs[0].date);
+    const now = new Date();
+    const monthsOwned = (now.getFullYear() - firstDate.getFullYear()) * 12 + (now.getMonth() - firstDate.getMonth()) + (now.getDate() / 30);
+    if (monthsOwned > 0) {
+      const avgMonthly = Math.round(totalCost / monthsOwned);
+      const avgClass = avgMonthly > 500 ? 'warn' : 'green';
+      avgMonthlyHtml = `<div class="stat-value ${avgClass}">${avgMonthly.toLocaleString()} SAR</div><div style="font-size:11px;color:var(--text-dim);margin-top:2px">${Math.round(monthsOwned)} months owned</div>`;
+    }
+  }
+
   document.getElementById('statsBar').innerHTML = `
     <div class="stat-card"><div class="stat-label">Total MX Cost</div><div class="stat-value green">${totalCost.toLocaleString()} SAR</div></div>
+    <div class="stat-card"><div class="stat-label">Avg Monthly MX</div>${avgMonthlyHtml}</div>
     <div class="stat-card"><div class="stat-label">Est. Car Value</div><div class="stat-value blue">${estValue.toLocaleString()} SAR</div></div>
     <div class="stat-card"><div class="stat-label">Next Oil Change</div>${oilHtml}</div>
     <div class="stat-card"><div class="stat-label">Current KM</div><div class="stat-value">${maxKm > 0 ? maxKm.toLocaleString() : '—'}</div></div>
